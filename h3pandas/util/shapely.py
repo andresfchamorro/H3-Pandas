@@ -1,6 +1,7 @@
 from typing import Union, Set, Tuple, List
 from shapely.geometry import Polygon, MultiPolygon
 from h3 import h3
+from functools import reduce
 
 MultiPolyOrPoly = Union[Polygon, MultiPolygon]
 
@@ -13,7 +14,7 @@ def _extract_coords(polygon: Polygon) -> Tuple[List, List[List]]:
 
 
 def polyfill(
-    geometry: MultiPolyOrPoly, resolution: int, geo_json: bool = False
+    geometry: MultiPolyOrPoly, resolution: int, geo_json: bool = False, overfill: bool = False
 ) -> Set[str]:
     """h3.polyfill accepting a shapely (Multi)Polygon
 
@@ -25,6 +26,8 @@ def polyfill(
         H3 resolution of the filling cells
     geo_json : bool
         If True, coordinates are assumed to be lng/lat. Default: False (lat/lng)
+    overfill : bool
+        If True, includes h3 cells from outer ring. Default: False
 
     Returns
     -------
@@ -34,14 +37,32 @@ def polyfill(
     ------
     TypeError if geometry is not a Polygon or MultiPolygon
     """
+    _max_h3_resolution = 15  # this is the max resolution of the hexes in H3
     if isinstance(geometry, Polygon):
-        outer, inners = _extract_coords(geometry)
-        return h3.polyfill_polygon(outer, resolution, inners, geo_json)
+        outer, inners = _extract_coords(geometry)    
+        fillers = h3.polyfill_polygon(outer, resolution, inners, geo_json)
+        if len(fillers) < 1:
+            for i in range(resolution+1, _max_h3_resolution+1):
+                fillers = h3.polyfill_polygon(outer, i, inners, geo_json)
+                if len(fillers) > 0:
+                    # print(f"A hex of resolution: {i} fits the input polygon")
+                    temp_fillers = set(fillers)
+                    break
+            # print(f"Finding it's parent in resolution: {hex_resolution}")
+            temp_fillers = set([h3.geo_to_h3(*h3.h3_to_geo(f), resolution) for f in fillers])
+        
+        else:
+            temp_fillers = set(fillers)
+        
+        if overfill == True:
+            temp_fillers = reduce(set.union,[set(h3.k_ring(x,1)) for x in temp_fillers])
+        
+        return set(temp_fillers)
 
     elif isinstance(geometry, MultiPolygon):
         h3_addresses = []
         for poly in geometry.geoms:
-            h3_addresses.extend(polyfill(poly, resolution, geo_json))
+            h3_addresses.extend(polyfill(poly, resolution, geo_json, overfill))
 
         return set(h3_addresses)
     else:

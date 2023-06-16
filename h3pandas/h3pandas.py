@@ -359,7 +359,7 @@ class H3Accessor:
         COLUMN_H3_POLYFILL,
         "containing a list H3 addresses whose centroid falls into the Polygon",
     )
-    def polyfill(self, resolution: int, explode: bool = False) -> AnyDataFrame:
+    def polyfill(self, resolution: int, explode: bool = False, overfill: bool = False) -> AnyDataFrame:
         """
         Parameters
         ----------
@@ -395,7 +395,7 @@ class H3Accessor:
         """
 
         def func(row):
-            return list(polyfill(row.geometry, resolution, True))
+            return list(polyfill(row.geometry, resolution, True, overfill))
 
         result = self._df.apply(func, axis=1)
 
